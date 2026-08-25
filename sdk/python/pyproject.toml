@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-visualizer"
+version = "1.0.0"
+description = "Watch your multi-agent AI workflow as a 2D retro pixel-art game"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "Shubs5758" }]
+keywords = [
+    "langgraph", "langchain", "agents", "observability",
+    "visualization", "multi-agent", "deepagents",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Debuggers",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+
+# The client deliberately has NO required dependencies — it falls back to
+# batched HTTP POST over the standard library when nothing else is installed.
+dependencies = []
+
+[project.optional-dependencies]
+# Everything needed to run the bridge and serve the bundled dashboard.
+server = ["aiohttp>=3.9"]
+# Lower-latency WebSocket transport for the client.
+ws = ["websocket-client>=1.7"]
+all = ["aiohttp>=3.9", "websocket-client>=1.7"]
+
+[project.urls]
+Homepage = "https://github.com/Shubs5758/agent-visualizer"
+Documentation = "https://github.com/Shubs5758/agent-visualizer#readme"
+Issues = "https://github.com/Shubs5758/agent-visualizer/issues"
+
+[project.scripts]
+agent-visualizer = "agent_visualizer.cli:main"
+
+[tool.hatch.build.targets.wheel]
+# The built dashboard lives at src/agent_visualizer/web and is picked up as
+# package data automatically — that is what makes `pip install` genuinely all a
+# consumer needs: no Node, no npm, no separate front end to run.
+packages = ["src/agent_visualizer"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/agent_visualizer", "README.md", "LICENSE", "pyproject.toml", "examples"]

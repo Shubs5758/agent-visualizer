@@ -1,0 +1,28 @@
+{
+  "name": "agent-visualizer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "2D retro pixel-art visualizer for multi-agent AI workflows \u2014 plug-and-play for any Python or TypeScript agent framework",
+  "type": "module",
+  "workspaces": [
+    "web",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c cyan,green \"npm:server\" \"npm:web\"",
+    "server": "npm --prefix server run start",
+    "web": "npm --prefix web run dev",
+    "build": "npm --prefix web run build",
+    "preview": "npm --prefix web run preview",
+    "typecheck": "npm --prefix web exec -- tsc -b --noEmit",
+    "demo": "agent-visualizer demo",
+    "bundle-web": "npm run build && node -e \"require('fs').cpSync('web/dist','sdk/python/src/agent_visualizer/web',{recursive:true,force:true})\"",
+    "package-python": "npm run bundle-web && python -m build --wheel --outdir sdk/python/dist sdk/python"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

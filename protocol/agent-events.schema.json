@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/agent-visualizer/protocol/agent-events.schema.json",
+  "title": "Agent Visualizer Event",
+  "description": "Framework-agnostic events streamed from an AI agent workflow into the 2D Retro Agent Visualizer.",
+  "type": "object",
+  "required": ["event"],
+  "discriminator": { "propertyName": "event" },
+  "oneOf": [
+    { "$ref": "#/$defs/RegisterAgent" },
+    { "$ref": "#/$defs/AgentMove" },
+    { "$ref": "#/$defs/AgentCommunicate" },
+    { "$ref": "#/$defs/AgentStateUpdate" },
+    { "$ref": "#/$defs/GraphUpdate" },
+    { "$ref": "#/$defs/Unregister" },
+    { "$ref": "#/$defs/Reset" }
+  ],
+
+  "$defs": {
+    "Envelope": {
+      "type": "object",
+      "properties": {
+        "ts": {
+          "type": "number",
+          "description": "Unix epoch milliseconds. Stamped by the server when absent."
+        },
+        "run_id": {
+          "type": "string",
+          "description": "Groups all events from a single workflow execution."
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Global monotonic sequence number assigned by the server."
+        }
+      }
+    },
+
+    "GridPos": {
+      "type": "object",
+      "description": "A tile coordinate on the 25x18 grid. Origin is top-left.",
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0, "maximum": 24 },
+        "y": { "type": "integer", "minimum": 0, "maximum": 17 }
+      },
+      "additionalProperties": false
+    },
+
+    "ZoneId": {
+      "type": "string",
+      "enum": ["gateway", "library", "tools", "council", "vault"]
+    },
+
+    "AvatarType": {
+      "type": "string",
+      "description": "Sprite archetype. Unrecognised values are hashed deterministically onto this list.",
+      "enum": ["knight", "artificer", "rogue", "cleric", "bard", "ranger", "mage", "druid"]
+    },
+
+    "HexColor": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$"
+    },
+
+    "RegisterAgent": {
+      "title": "REGISTER_AGENT",
+      "allOf": [{ "$ref": "#/$defs/Envelope" }],
+      "type": "object",
+      "required": ["event", "agent_id"],
+      "properties": {
+        "event": { "const": "register" },
+        "agent_id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "avatar_type": { "$ref": "#/$defs/AvatarType" },
+        "initial_pos": { "$ref": "#/$defs/GridPos" },
+        "color": { "$ref": "#/$defs/HexColor" },
+        "ts": true,
+        "run_id": true,
+        "seq": true
+      },
+      "examples": [
+        {
+          "event": "register",
+          "agent_id": "scout_1",
+          "name": "Scout",
+          "role": "scout",
+          "avatar_type": "rogue",
+          "initial_pos": { "x": 2, "y": 3 }
+        }
+      ]
+    },
+
+    "AgentMove": {
+      "title": "AGENT_MOVE",
+      "allOf": [{ "$ref": "#/$defs/Envelope" }],
+      "type": "object",
+      "required": ["event", "agent_id"],
+      "anyOf": [
+        { "required": ["target_pos"] },
+        { "required": ["target_zone"] }
+      ],
+      "properties": {
+        "event": { "const": "move" },
+        "agent_id": { "type": "string", "minLength": 1 },
+        "target_pos": { "$ref": "#/$defs/GridPos" },
+        "target_zone": { "$ref": "#/$defs/ZoneId" },
+        "speed": { "type": "number", "exclusiveMinimum": 0, "default": 1.0 },
+        "ts": true,
+        "run_id": true,
+        "seq": true
+      },
+      "examples": [
+        {
+          "event": "move",
+          "agent_id": "scout_1",
+          "target_pos": { "x": 8, "y": 5 },
+          "speed": 1.0
+        }
+      ]
+    },
+
+    "AgentCommunicate": {
+      "title": "AGENT_COMMUNICATE",
+      "allOf": [{ "$ref": "#/$defs/Envelope" }],
+      "type": "object",
+      "required": ["event", "source_agent_id", "message"],
+      "properties": {
+        "event": { "const": "communicate" },
+        "source_agent_id": { "type": "string", "minLength": 1 },
+        "target_agent_id": {
+          "type": ["string", "null"],
+          "description": "Omit or null for a broadcast: the bubble shows without any walking."
+        },
+        "message": { "type": "string" },
+        "interaction_type": {
+          "type": "string",
+          "enum": ["dialogue", "handoff", "request", "response", "broadcast"],
+          "default": "dialogue"
+        },
+        "ts": true,
+        "run_id": true,
+        "seq": true
+      },
+      "examples": [
+        {
+          "event": "communicate",
+          "source_agent_id": "scout_1",
+          "target_agent_id": "mage_1",
+          "message": "Discovered target node.",
+          "interaction_type": "dialogue"
+        }
+      ]
+    },
+
+    "AgentStateUpdate": {
+      "title": "AGENT_STATE_UPDATE",
+      "allOf": [{ "$ref": "#/$defs/Envelope" }],
+      "type": "object",
+      "required": ["event", "agent_id", "status"],
+      "properties": {
+        "event": { "const": "state_update" },
+        "agent_id": { "type": "string", "minLength": 1 },
+        "status": { "type": "string" },
+        "detail": { "type": "string" },
+        "metrics": {
+          "type": "object",
+          "description": "Numeric metrics. tokens / latency_ms / cost_usd are rendered specially.",
+          "properties": {
+            "tokens": { "type": "number" },
+            "latency_ms": { "type": "number" },
+            "cost_usd": { "type": "number" }
+          },
+          "additionalProperties": { "type": "number" }
+        },
+        "ts": true,
+        "run_id": true,
+        "seq": true
+      },
+      "examples": [
+        {
+          "event": "state_update",
+          "agent_id": "scout_1",
+          "status": "Executing Tool: WebSearch",
+          "metrics": { "tokens": 320, "latency_ms": 140 }
+        }
+      ]
+    },
+
+    "GraphUpdate": {
+      "title": "GRAPH_UPDATE",
+      "allOf": [{ "$ref": "#/$defs/Envelope" }],
+      "type": "object",
+      "required": ["event", "source", "target"],
+      "properties": {
+        "event": { "const": "graph_edge" },
+        "source": { "type": "string", "minLength": 1 },
+        "target": { "type": "string", "minLength": 1 },
+        "weight": { "type": "number", "default": 1.0 },
+        "label": { "type": "string" },
+        "ts": true,
+        "run_id": true,
+        "seq": true
+      },
+      "examples": [
+        { "event": "graph_edge", "source": "scout_1", "target": "mage_1", "weight": 1.0 }
+      ]
+    },
+
+    "Unregister": {
+      "title": "UNREGISTER_AGENT (extension)",
+      "allOf": [{ "$ref": "#/$defs/Envelope" }],
+      "type": "object",
+      "required": ["event", "agent_id"],
+      "properties": {
+        "event": { "const": "unregister" },
+        "agent_id": { "type": "string", "minLength": 1 },
+        "ts": true,
+        "run_id": true,
+        "seq": true
+      }
+    },
+
+    "Reset": {
+      "title": "RESET_WORLD (extension)",
+      "allOf": [{ "$ref": "#/$defs/Envelope" }],
+      "type": "object",
+      "required": ["event"],
+      "properties": {
+        "event": { "const": "reset" },
+        "ts": true,
+        "run_id": true,
+        "seq": true
+      }
+    }
+  }
+}

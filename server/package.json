@@ -1,0 +1,18 @@
+{
+  "name": "@agent-visualizer/server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WebSocket ingestion + broadcast bridge for the 2D Retro AI Agent Visualizer",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
