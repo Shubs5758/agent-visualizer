@@ -1,5 +1,5 @@
 """
-visualizer_client — drop-in client for the 2D Retro AI Agent Visualizer.
+agent_visualizer.client — drop-in client for the 2D Retro AI Agent Visualizer.
 
 Design goals, in priority order:
 
@@ -13,7 +13,7 @@ Design goals, in priority order:
 
 Direct use::
 
-    from visualizer_client import AgentVisualizerClient
+    from agent_visualizer import AgentVisualizerClient
 
     vis = AgentVisualizerClient("ws://localhost:8765")
     scout = vis.register("scout_1", name="Scout", role="scout", avatar_type="rogue")
@@ -23,7 +23,7 @@ Direct use::
 
 LangChain / LangGraph use::
 
-    from visualizer_client import VisualizerCallback
+    from agent_visualizer import VisualizerCallback
 
     vis = VisualizerCallback(server_url="ws://localhost:8765")
     graph.invoke(state, config={"callbacks": [vis]})
@@ -56,7 +56,7 @@ __all__ = [
 
 __version__ = "1.0.0"
 
-log = logging.getLogger("visualizer_client")
+log = logging.getLogger("agent_visualizer")
 
 DEFAULT_SERVER_URL = "ws://localhost:8765"
 
@@ -249,7 +249,7 @@ def _select_transport(url: str, client_name: str, prefer: str = "auto") -> _Tran
                     "transport='websocket' requires: pip install websocket-client"
                 )
             log.info(
-                "visualizer_client: websocket-client not installed, "
+                "agent_visualizer: websocket-client not installed, "
                 "falling back to HTTP ingest (pip install websocket-client for lower latency)"
             )
         else:
@@ -379,7 +379,7 @@ class AgentVisualizerClient:
                 self._transport.connect()
                 self._connected.set()
                 log.info(
-                    "visualizer_client: connected to %s via %s",
+                    "agent_visualizer: connected to %s via %s",
                     self.server_url,
                     self._transport.name,
                 )
@@ -390,12 +390,12 @@ class AgentVisualizerClient:
                 self._connected.clear()
                 if self._stop.is_set():
                     break
-                log.debug("visualizer_client: connection failed (%s); retrying in %.1fs", exc, backoff)
+                log.debug("agent_visualizer: connection failed (%s); retrying in %.1fs", exc, backoff)
                 self._stop.wait(backoff)
                 backoff = min(backoff * 2, 30.0)
             except Exception as exc:  # pragma: no cover - defensive
                 self._connected.clear()
-                log.debug("visualizer_client: unexpected sender error: %s", exc)
+                log.debug("agent_visualizer: unexpected sender error: %s", exc)
                 self._stop.wait(backoff)
                 backoff = min(backoff * 2, 30.0)
             finally:
@@ -484,7 +484,7 @@ class AgentVisualizerClient:
             event.setdefault("run_id", self.run_id)
             self._offer(json.dumps(event, default=str))
         except Exception as exc:  # pragma: no cover - never break the host
-            log.debug("visualizer_client: failed to emit %r: %s", event.get("event"), exc)
+            log.debug("agent_visualizer: failed to emit %r: %s", event.get("event"), exc)
 
     def _ensure_agent(self, agent_id: str) -> None:
         if not self.auto_register:
@@ -562,7 +562,7 @@ class AgentVisualizerClient:
     ) -> None:
         """AGENT_MOVE — walk to a tile, or to a named zone."""
         if x is None and y is None and zone is None:
-            log.debug("visualizer_client: move_to needs coordinates or a zone")
+            log.debug("agent_visualizer: move_to needs coordinates or a zone")
             return
         self._ensure_agent(agent_id)
         event: Dict[str, Any] = {"event": "move", "agent_id": agent_id, "speed": float(speed)}

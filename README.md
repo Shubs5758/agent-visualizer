@@ -75,7 +75,7 @@ about the Python path, `server/` can be deleted.
 │ LangGraph / CrewAI │      │  Node + ws        │     │ React dashboard        │
 │ AutoGen / anything │─ws──▶│  :8765            │─ws─▶│  ├ roster (left)       │
 │                    │      │  · validation     │     │  ├ Phaser 3 canvas     │
-│ visualizer_client  │─http▶│  · replay buffer  │     │  │   └ HUD overlays    │
+│ agent_visualizer   │─http▶│  · replay buffer  │     │  │   └ HUD overlays    │
 └────────────────────┘      │  · fan-out        │     │  └ metrics feed (right)│
                             └───────────────────┘     └────────────────────────┘
 ```

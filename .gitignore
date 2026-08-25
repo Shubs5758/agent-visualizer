@@ -22,3 +22,4 @@ venv/
 sdk/python/dist/
 sdk/python/build/
 sdk/python/src/*.egg-info/
+.claude/
