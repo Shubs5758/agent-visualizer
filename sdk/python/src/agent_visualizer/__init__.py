@@ -35,7 +35,7 @@ from .client import (
     visualize_agent,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 __all__ = [
     "AgentVisualizerClient",

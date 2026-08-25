@@ -29,6 +29,10 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+# Single source of truth for the version — it used to be hard-coded here as
+# well, which is exactly how the published 1.0.0 drifted out of sync.
+from . import __version__ as VERSION
+
 try:
     from aiohttp import WSMsgType, web
 except ImportError as exc:  # pragma: no cover - surfaced as a friendly CLI error
@@ -38,8 +42,6 @@ except ImportError as exc:  # pragma: no cover - surfaced as a friendly CLI erro
     ) from exc
 
 log = logging.getLogger("agent_visualizer.bridge")
-
-VERSION = "1.0.0"
 
 DEFAULT_PORT = int(os.environ.get("VISUALIZER_PORT", "8765"))
 DEFAULT_HOST = os.environ.get("VISUALIZER_HOST", "0.0.0.0")
