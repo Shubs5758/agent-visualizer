@@ -8,9 +8,9 @@ existing Python or TypeScript agent code.
 Two lines of integration, no changes to your agent logic:
 
 ```python
-from visualizer_client import VisualizerCallback
+from agent_visualizer import VisualizerCallback
 
-vis = VisualizerCallback(server_url="ws://localhost:8765")
+vis = VisualizerCallback()   # defaults to ws://localhost:8765
 graph.invoke(state, config={"callbacks": [vis]})   # LangGraph / LangChain
 ```
 
@@ -21,10 +21,14 @@ graph.invoke(state, config={"callbacks": [vis]})   # LangGraph / LangChain
 The dashboard is bundled inside the Python wheel, so one install gets you
 everything:
 
+> **Not published to PyPI yet** — install from this repo:
+
 ```bash
-pip install "agent-visualizer[server]"
+pip install "agent-visualizer[server] @ git+https://github.com/Shubs5758/agent-visualizer.git#subdirectory=sdk/python"
 agent-visualizer serve          # bridge + dashboard on http://localhost:8765
 ```
+
+From a clone, `pip install "sdk/python[server]"` (add `-e` for an editable install).
 
 Then, in a second terminal:
 
@@ -86,8 +90,8 @@ looks right, a real backend will too.
 | --------------------------------- | ------------------------------------------------------------ |
 | `protocol/PROTOCOL.md`            | The event contract — start here                              |
 | `protocol/agent-events.schema.json` | JSON Schema (draft 2020-12) for validation/codegen          |
-| `server/src/index.js`             | WebSocket + HTTP ingestion bridge                            |
-| `sdk/python/visualizer_client.py` | The Python client, callback handler and decorator            |
+| `server/src/index.js`             | Node bridge (the Python one lives in the package above)      |
+| `sdk/python/src/agent_visualizer/` | The installable package: client, callback, bridge, CLI      |
 | `sdk/python/examples/`            | Runnable demos (plain Python, and LangGraph)                 |
 | `web/src/protocol/`               | TS types + world geometry (single source of truth)           |
 | `web/src/game/`                   | Phaser scene, procedural sprites, A\* pathfinding, EventBus  |
@@ -123,9 +127,9 @@ curl -X POST http://localhost:8765/ingest -H 'Content-Type: application/json' \
 ### Direct control
 
 ```python
-from visualizer_client import AgentVisualizerClient
+from agent_visualizer import AgentVisualizerClient
 
-vis = AgentVisualizerClient("ws://localhost:8765")
+vis = AgentVisualizerClient()
 
 scout = vis.register("scout_1", name="Scout", role="scout", avatar_type="rogue")
 scout.move_to(zone="library")
@@ -139,7 +143,7 @@ scout.speak("Found the target node.", to="mage_1")
 node becomes an agent sprite** with no code inside your nodes:
 
 ```python
-vis = VisualizerCallback(server_url="ws://localhost:8765")
+vis = VisualizerCallback()   # defaults to ws://localhost:8765
 app.invoke(state, config={"callbacks": [vis]})
 ```
 
@@ -149,7 +153,7 @@ It walks the sprite to the Tool Forge on `on_tool_start`, to the Library on
 ### Any plain function
 
 ```python
-from visualizer_client import visualize_agent
+from agent_visualizer import visualize_agent
 
 @visualize_agent("scout_1", role="scout", avatar_type="rogue")
 def scout(query: str) -> str:

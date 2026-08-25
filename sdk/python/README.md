@@ -7,8 +7,10 @@ your existing agent code.
 
 Works with **LangGraph**, **LangChain**, **deepagents**, or any Python at all.
 
+> **Not on PyPI yet.** Install from GitHub until the first release is published:
+
 ```bash
-pip install "agent-visualizer[server]"
+pip install "agent-visualizer[server] @ git+https://github.com/Shubs5758/agent-visualizer.git#subdirectory=sdk/python"
 agent-visualizer serve
 ```
 
@@ -78,12 +80,17 @@ Avatars: `knight`, `artificer`, `rogue`, `cleric`, `bard`, `ranger`, `mage`, `dr
 
 ## Install options
 
-| Command | Gets you |
+Until the package is on PyPI, replace `agent-visualizer` below with the GitHub
+URL form: `"agent-visualizer[EXTRA] @ git+https://github.com/Shubs5758/agent-visualizer.git#subdirectory=sdk/python"`.
+
+| Extra | Gets you |
 | --- | --- |
-| `pip install agent-visualizer` | The client only — **zero dependencies** |
-| `pip install "agent-visualizer[ws]"` | + WebSocket transport (lower latency) |
-| `pip install "agent-visualizer[server]"` | + the bridge and the bundled dashboard |
-| `pip install "agent-visualizer[all]"` | Everything |
+| *(none)* | The client only — **zero dependencies** |
+| `[ws]` | + WebSocket transport (lower latency) |
+| `[server]` | + the bridge and the bundled dashboard |
+| `[all]` | Everything |
+
+Working on the code itself? `pip install -e "sdk/python[all]"` from the repo root.
 
 The client works with **no dependencies at all**: without `websocket-client` it
 falls back to batched HTTP POST using only the standard library. Install the
