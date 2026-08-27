@@ -51,7 +51,10 @@ MAX_QUEUED_FRAMES = 512
 HEARTBEAT_S = 30.0
 
 PRODUCER_EVENTS = frozenset(
-    {"register", "move", "communicate", "state_update", "graph_edge", "unregister", "reset"}
+    {
+        "register", "move", "communicate", "state_update", "graph_edge",
+        "unregister", "reset", "zone", "zone_remove",
+    }
 )
 
 WEB_ROOT = Path(__file__).parent / "web"
@@ -68,6 +71,8 @@ class World:
     def __init__(self, buffer_size: int = REPLAY_BUFFER_SIZE) -> None:
         self.agents: Dict[str, Dict[str, Any]] = {}
         self.edges: Dict[str, Dict[str, Any]] = {}
+        #: zone_id -> declaring event, replayed to late viewers
+        self.zones: Dict[str, Dict[str, Any]] = {}
         self.replay: List[Dict[str, Any]] = []
         self.buffer_size = buffer_size
         self.seq = 0
@@ -76,6 +81,7 @@ class World:
     def reset(self) -> None:
         self.agents.clear()
         self.edges.clear()
+        self.zones.clear()
         self.replay = []
 
     def apply(self, evt: Dict[str, Any]) -> None:
@@ -116,6 +122,12 @@ class World:
             if prev:
                 prev["online"] = False
 
+        elif kind == "zone":
+            self.zones[evt["zone_id"]] = evt
+
+        elif kind == "zone_remove":
+            self.zones.pop(evt["zone_id"], None)
+
         elif kind == "reset":
             self.reset()
 
@@ -144,6 +156,7 @@ class World:
             "ts": int(time.time() * 1000),
             "agents": list(self.agents.values()),
             "edges": list(self.edges.values()),
+            "zones": list(self.zones.values()),
             "recent": list(self.replay),
         }
 
@@ -173,6 +186,8 @@ def validate(raw: Any, world: World) -> Tuple[bool, Any]:
         isinstance(raw.get("source"), str) and isinstance(raw.get("target"), str)
     ):
         return False, "graph_edge requires source and target"
+    if kind in ("zone", "zone_remove") and not isinstance(raw.get("zone_id"), str):
+        return False, f"{kind} requires zone_id"
 
     event = dict(raw)
     if not isinstance(event.get("ts"), (int, float)):
@@ -373,6 +388,7 @@ def build_app(bridge: Optional[Bridge] = None, serve_dashboard: bool = True) -> 
                 "viewers": bridge.viewers(),
                 "agents": len(bridge.world.agents),
                 "edges": len(bridge.world.edges),
+                "zones": len(bridge.world.zones),
                 "buffered": len(bridge.world.replay),
                 "counters": bridge.world.counters,
             }

@@ -7,7 +7,7 @@
  * stuck agent.
  */
 
-import { GRID_COLS, GRID_ROWS, isBlocked } from '../../protocol/world';
+import { isBlocked, world } from '../../protocol/world';
 
 export interface GridPos {
   x: number;
@@ -23,7 +23,8 @@ const NEIGHBOURS: ReadonlyArray<[number, number]> = [
   [-1, 0],
 ];
 
-const idx = (x: number, y: number) => y * GRID_COLS + x;
+/** Grid dimensions are runtime state now — read them per call, not at import. */
+const idx = (x: number, y: number, cols: number) => y * cols + x;
 
 function manhattan(a: GridPos, b: GridPos): number {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
@@ -45,16 +46,18 @@ export function findPath(
   if (samePos(start, goal)) return [];
   if (blocked(goal.x, goal.y)) return [];
 
-  const total = GRID_COLS * GRID_ROWS;
+  const cols = world.cols;
+  const rows = world.rows;
+  const total = cols * rows;
   const cameFrom = new Int32Array(total).fill(-1);
   const gScore = new Float64Array(total).fill(Number.POSITIVE_INFINITY);
   const closed = new Uint8Array(total);
 
-  const startIdx = idx(start.x, start.y);
+  const startIdx = idx(start.x, start.y, cols);
   gScore[startIdx] = 0;
 
-  // The grid is 450 tiles; a sorted-insert open list beats a heap's overhead
-  // and keeps this readable.
+  // Grids stay small (a few thousand tiles even for a large floorplan), so a
+  // sorted-insert open list beats a heap's overhead and keeps this readable.
   const open: { i: number; f: number }[] = [{ i: startIdx, f: manhattan(start, goal) }];
 
   while (open.length) {
@@ -62,14 +65,14 @@ export function findPath(
     if (closed[current.i]) continue;
     closed[current.i] = 1;
 
-    const cx = current.i % GRID_COLS;
-    const cy = Math.floor(current.i / GRID_COLS);
+    const cx = current.i % cols;
+    const cy = Math.floor(current.i / cols);
 
     if (cx === goal.x && cy === goal.y) {
       const path: GridPos[] = [];
       let node = current.i;
       while (node !== startIdx && node !== -1) {
-        path.push({ x: node % GRID_COLS, y: Math.floor(node / GRID_COLS) });
+        path.push({ x: node % cols, y: Math.floor(node / cols) });
         node = cameFrom[node];
       }
       return path.reverse();
@@ -78,9 +81,9 @@ export function findPath(
     for (const [dx, dy] of NEIGHBOURS) {
       const nx = cx + dx;
       const ny = cy + dy;
-      if (nx < 0 || ny < 0 || nx >= GRID_COLS || ny >= GRID_ROWS) continue;
+      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
       if (blocked(nx, ny)) continue;
-      const ni = idx(nx, ny);
+      const ni = idx(nx, ny, cols);
       if (closed[ni]) continue;
 
       const tentative = gScore[current.i] + 1;
@@ -112,7 +115,9 @@ export function nearestFree(
 ): GridPos {
   if (!blocked(goal.x, goal.y) && !isTaken(goal.x, goal.y)) return goal;
 
-  const seen = new Set<number>([idx(goal.x, goal.y)]);
+  const cols = world.cols;
+  const rows = world.rows;
+  const seen = new Set<number>([idx(goal.x, goal.y, cols)]);
   const frontier: GridPos[] = [goal];
 
   while (frontier.length) {
@@ -120,8 +125,8 @@ export function nearestFree(
     for (const [dx, dy] of NEIGHBOURS) {
       const nx = node.x + dx;
       const ny = node.y + dy;
-      if (nx < 0 || ny < 0 || nx >= GRID_COLS || ny >= GRID_ROWS) continue;
-      const ni = idx(nx, ny);
+      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+      const ni = idx(nx, ny, cols);
       if (seen.has(ni)) continue;
       seen.add(ni);
       if (!blocked(nx, ny) && !isTaken(nx, ny)) return { x: nx, y: ny };
@@ -142,7 +147,7 @@ export function adjacentTo(
   isTaken: (x: number, y: number) => boolean = () => false,
 ): GridPos {
   const options = NEIGHBOURS.map(([dx, dy]) => ({ x: target.x + dx, y: target.y + dy }))
-    .filter((p) => p.x >= 0 && p.y >= 0 && p.x < GRID_COLS && p.y < GRID_ROWS)
+    .filter((p) => p.x >= 0 && p.y >= 0 && p.x < world.cols && p.y < world.rows)
     .filter((p) => !blocked(p.x, p.y) && !isTaken(p.x, p.y))
     .sort((a, b) => manhattan(a, from) - manhattan(b, from));
 

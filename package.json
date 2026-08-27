@@ -17,7 +17,10 @@
     "typecheck": "npm --prefix web exec -- tsc -b --noEmit",
     "demo": "agent-visualizer demo",
     "bundle-web": "npm run build && node -e \"require('fs').cpSync('web/dist','sdk/python/src/agent_visualizer/web',{recursive:true,force:true})\"",
-    "package-python": "npm run bundle-web && python -m build --wheel --outdir sdk/python/dist sdk/python"
+    "package-python": "npm run bundle-web && python -m build --wheel --outdir sdk/python/dist sdk/python",
+    "test": "node tests/run.mjs",
+    "test:py": "python tests/python/test_sdk.py",
+    "test:all": "npm test && npm run test:py"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

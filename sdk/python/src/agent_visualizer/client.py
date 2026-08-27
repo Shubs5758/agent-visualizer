@@ -51,6 +51,7 @@ __all__ = [
     "VisualizerCallback",
     "visualize_agent",
     "ZONES",
+    "ZONE_KINDS",
     "AVATAR_TYPES",
 ]
 
@@ -60,8 +61,15 @@ log = logging.getLogger("agent_visualizer")
 
 DEFAULT_SERVER_URL = "ws://localhost:8765"
 
-#: Interaction zones understood by ``move_to(zone=...)``. Mirrors PROTOCOL.md §5.
+#: Rooms of the built-in default floor, understood by ``move_to(zone=...)``.
+#: Declare your own with :meth:`AgentVisualizerClient.define_zone` instead.
 ZONES: Tuple[str, ...] = ("gateway", "library", "tools", "council", "vault")
+
+#: What a room is for. Drives its look and furniture; see PROTOCOL.md §5.
+ZONE_KINDS: Tuple[str, ...] = (
+    "gateway", "registry", "memory", "tools", "mcp", "llm",
+    "eval", "guardrail", "council", "output", "custom",
+)
 
 #: Sprite archetypes. Unknown values are hashed onto this list by the renderer.
 AVATAR_TYPES: Tuple[str, ...] = (
@@ -637,6 +645,71 @@ class AgentVisualizerClient:
         if label:
             event["label"] = label
         self.emit(event)
+
+    def define_zone(
+        self,
+        zone_id: str,
+        label: Optional[str] = None,
+        *,
+        kind: str = "custom",
+        capacity: int = 4,
+        color: Optional[str] = None,
+    ) -> None:
+        """
+        Declare a room on the floor.
+
+        The floorplan is laid out automatically, so you describe *what a room
+        is* and never think about coordinates. The first room you declare
+        replaces the built-in default floor entirely.
+
+        ::
+
+            vis.define_zone("mcp_github", "MCP · GitHub", kind="mcp", capacity=6)
+            vis.define_zone("evals", "Eval Harness", kind="eval", capacity=9)
+
+        Args:
+            zone_id: stable id, used as ``move_to(zone=...)``.
+            label: text on the door plaque. Defaults to the id, upper-cased.
+            kind: one of :data:`ZONE_KINDS`; anything else becomes ``custom``.
+            capacity: how many agents work here at once — sets the room size
+                and the number of workstations. Agents beyond it queue at the
+                door rather than piling up inside.
+        """
+        event: Dict[str, Any] = {
+            "event": "zone",
+            "zone_id": zone_id,
+            "label": label or zone_id.replace("_", " ").upper(),
+            "kind": kind if kind in ZONE_KINDS else "custom",
+            "capacity": max(1, int(capacity)),
+        }
+        if color:
+            event["color"] = color
+        self.emit(event)
+
+    def define_world(self, zones: Sequence[Dict[str, Any]]) -> None:
+        """
+        Declare the whole floor at once.
+
+        ::
+
+            vis.define_world([
+                {"id": "gateway",  "kind": "gateway",  "capacity": 4},
+                {"id": "mcp_gh",   "kind": "mcp",      "capacity": 6, "label": "MCP · GitHub"},
+                {"id": "evals",    "kind": "eval",     "capacity": 9},
+            ])
+        """
+        for zone in zones:
+            self.define_zone(
+                zone.get("id") or zone["zone_id"],
+                zone.get("label"),
+                kind=zone.get("kind", "custom"),
+                capacity=int(zone.get("capacity", 4)),
+                color=zone.get("color"),
+            )
+
+    def remove_zone(self, zone_id: str) -> None:
+        """Close a room. Agents inside are re-seated on the next relayout."""
+        self.emit({"event": "zone_remove", "zone_id": zone_id})
 
     def unregister(self, agent_id: str) -> None:
         with self._lock:

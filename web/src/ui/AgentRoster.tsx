@@ -1,6 +1,11 @@
 import { Coins, Crosshair, Gauge, MessageSquare, Users } from 'lucide-react';
-import { ZONES } from '../protocol/world';
 import { useVisualizerState, type AgentRecord } from '../state/agentStore';
+import { ZONE_STYLES } from '../protocol/zones';
+
+/** Room accent as CSS, for the legend chips. */
+const ZONE_STYLE_HEX: Record<string, string> = Object.fromEntries(
+  Object.entries(ZONE_STYLES).map(([k, s]) => [k, `#${s.accent.toString(16).padStart(6, '0')}`]),
+);
 
 function statusTone(agent: AgentRecord): string {
   if (!agent.online) return 'offline';
@@ -56,7 +61,7 @@ function AgentCard({ agent, onFocus }: { agent: AgentRecord; onFocus: (id: strin
 }
 
 export function AgentRoster({ onFocusAgent }: { onFocusAgent: (id: string) => void }) {
-  const { agents, edges } = useVisualizerState();
+  const { agents, edges, zones } = useVisualizerState();
   const online = agents.filter((a) => a.online).length;
 
   return (
@@ -108,20 +113,26 @@ export function AgentRoster({ onFocusAgent }: { onFocusAgent: (id: string) => vo
       </section>
 
       <section className="panel-section">
-        <h3>Zones</h3>
-        <ul className="zone-list">
-          {ZONES.map((zone) => (
-            <li key={zone.id}>
-              <span
-                className="zone-chip"
-                style={{ borderColor: `#${zone.accent.toString(16).padStart(6, '0')}` }}
-              >
-                {zone.id}
-              </span>
-              <span className="dim small">{zone.blurb}</span>
-            </li>
-          ))}
-        </ul>
+        <h3>Rooms ({zones.length})</h3>
+        {zones.length === 0 ? (
+          <p className="dim small">Default floor — declare rooms with `zone` events.</p>
+        ) : (
+          <ul className="zone-list">
+            {zones.map((zone) => (
+              <li key={zone.id}>
+                <span
+                  className="zone-chip"
+                  style={{ borderColor: zone.color ?? ZONE_STYLE_HEX[zone.kind] ?? '#94a3b8' }}
+                >
+                  {zone.id}
+                </span>
+                <span className="dim small">
+                  {zone.kind} · {zone.capacity} seats
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </aside>
   );

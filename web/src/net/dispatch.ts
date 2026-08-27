@@ -34,11 +34,19 @@ function routeToGame(event: IncomingEvent): void {
     case 'reset':
       emitToGame.reset();
       break;
+    case 'zone':
+      emitToGame.zone(event);
+      break;
+    case 'zone_remove':
+      emitToGame.zoneRemove(event);
+      break;
     case 'snapshot':
       // Rebuild the world from the server's retained state. `recent` is
       // deliberately not replayed: the agents/edges already encode its outcome,
       // and replaying would double-count metrics.
       emitToGame.reset();
+      // Rooms first: agents are placed relative to the floorplan.
+      for (const zone of event.zones ?? []) emitToGame.zone(zone);
       for (const agent of event.agents) emitToGame.register(agent);
       for (const edge of event.edges) emitToGame.edge(edge);
       break;

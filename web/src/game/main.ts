@@ -1,19 +1,22 @@
 import Phaser from 'phaser';
-import { WORLD_HEIGHT, WORLD_WIDTH } from '../protocol/world';
+import { world } from '../protocol/world';
 import { WorldScene } from './scenes/WorldScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
-  width: WORLD_WIDTH,
-  height: WORLD_HEIGHT,
+  // Starting size only — the scene resizes the canvas whenever rooms change.
+  width: world.width,
+  height: world.height,
   backgroundColor: '#070a10',
   // Nearest-neighbour sampling and integer positions — without both, 16x16 art
   // scaled 2x shimmers as sprites move.
   pixelArt: true,
   roundPixels: true,
   scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
+    // RESIZE, not FIT: the canvas fills its container and the camera frames the
+    // world. Under FIT a bigger floorplan shrank every agent; now it pans.
+    mode: Phaser.Scale.RESIZE,
+    autoCenter: Phaser.Scale.NO_CENTER,
   },
   scene: [WorldScene],
 };

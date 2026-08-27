@@ -41,6 +41,8 @@ const PRODUCER_EVENTS = new Set([
   'graph_edge',
   'unregister',
   'reset',
+  'zone',
+  'zone_remove',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -51,6 +53,8 @@ const PRODUCER_EVENTS = new Set([
 const agents = new Map();
 /** "source->target" -> edge */
 const edges = new Map();
+/** zone_id -> the declaring event, replayed to late viewers */
+const zones = new Map();
 /** Ring buffer of recent raw events. */
 let replay = [];
 let seq = 0;
@@ -59,6 +63,7 @@ const counters = { received: 0, rejected: 0, broadcast: 0 };
 function resetWorld() {
   agents.clear();
   edges.clear();
+  zones.clear();
   replay = [];
 }
 
@@ -123,6 +128,12 @@ function applyToWorld(evt) {
       if (prev) agents.set(evt.agent_id, { ...prev, online: false });
       break;
     }
+    case 'zone':
+      zones.set(evt.zone_id, evt);
+      break;
+    case 'zone_remove':
+      zones.delete(evt.zone_id);
+      break;
     case 'reset':
       resetWorld();
       break;
@@ -135,6 +146,7 @@ function buildSnapshot() {
     ts: Date.now(),
     agents: [...agents.values()],
     edges: [...edges.values()],
+    zones: [...zones.values()],
     recent: replay,
   };
 }
@@ -158,6 +170,9 @@ function validate(raw) {
   const needsAgent = ['register', 'move', 'state_update', 'unregister'];
   if (needsAgent.includes(type) && typeof raw.agent_id !== 'string') {
     return { ok: false, reason: `${type} requires agent_id` };
+  }
+  if ((type === 'zone' || type === 'zone_remove') && typeof raw.zone_id !== 'string') {
+    return { ok: false, reason: `${type} requires zone_id` };
   }
   if (type === 'communicate' && typeof raw.source_agent_id !== 'string') {
     return { ok: false, reason: 'communicate requires source_agent_id' };
@@ -306,6 +321,7 @@ const server = http.createServer(async (req, res) => {
       viewers: countViewers(),
       agents: agents.size,
       edges: edges.size,
+      zones: zones.size,
       buffered: replay.length,
       counters,
     });

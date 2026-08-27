@@ -57,6 +57,14 @@ export interface FeedEntry {
   metrics?: AgentMetrics;
 }
 
+export interface ZoneRecord {
+  id: string;
+  label: string;
+  kind: string;
+  capacity: number;
+  color?: string;
+}
+
 export interface EdgeRecord {
   source: string;
   target: string;
@@ -76,6 +84,7 @@ export interface VisualizerState {
   agents: AgentRecord[];
   feed: FeedEntry[];
   edges: EdgeRecord[];
+  zones: ZoneRecord[];
   totals: Totals;
   connection: ConnectionStatus;
   connectionDetail: string;
@@ -94,6 +103,7 @@ class AgentStore {
   private listeners = new Set<() => void>();
   private agents = new Map<string, AgentRecord>();
   private edges = new Map<string, EdgeRecord>();
+  private zoneMap = new Map<string, ZoneRecord>();
   private feed: FeedEntry[] = [];
   private latencySum = 0;
   private latencyCount = 0;
@@ -127,6 +137,7 @@ class AgentStore {
       agents: [...this.agents.values()].sort((a, b) => a.name.localeCompare(b.name)),
       feed: this.feed,
       edges: [...this.edges.values()],
+      zones: [...this.zoneMap.values()],
       totals: { ...this.totals },
       connection: this.connection,
       connectionDetail: this.connectionDetail,
@@ -165,6 +176,7 @@ class AgentStore {
   clear(): void {
     this.agents.clear();
     this.edges.clear();
+    this.zoneMap.clear();
     this.feed = [];
     this.latencySum = 0;
     this.latencyCount = 0;
@@ -357,9 +369,39 @@ class AgentStore {
         break;
       }
 
+      case 'zone': {
+        const record: ZoneRecord = {
+          id: event.zone_id,
+          label: event.label ?? event.zone_id.toUpperCase(),
+          kind: event.kind ?? 'custom',
+          capacity: Math.max(1, Math.floor(event.capacity ?? 4)),
+          color: event.color,
+        };
+        const isNew = !this.zoneMap.has(record.id);
+        this.zoneMap.set(record.id, record);
+        if (isNew) {
+          this.pushFeed({
+            ts, kind: 'system', color: SYSTEM_COLOR,
+            title: `Room opened: ${record.label}`,
+            body: `${record.kind} · seats ${record.capacity}`,
+          });
+        }
+        break;
+      }
+
+      case 'zone_remove': {
+        const gone = this.zoneMap.get(event.zone_id);
+        this.zoneMap.delete(event.zone_id);
+        if (gone) {
+          this.pushFeed({ ts, kind: 'system', color: SYSTEM_COLOR, title: `Room closed: ${gone.label}` });
+        }
+        break;
+      }
+
       case 'reset': {
         this.agents.clear();
         this.edges.clear();
+        this.zoneMap.clear();
         this.latencySum = 0;
         this.latencyCount = 0;
         this.totals = { events: 0, messages: 0, tokens: 0, toolCalls: 0, avgLatencyMs: 0 };

@@ -104,12 +104,29 @@ export interface ResetEvent extends Envelope {
   event: 'reset';
 }
 
+/** Declares (or updates) a room. See `protocol/zones.ts` for the kinds. */
+export interface ZoneEvent extends Envelope {
+  event: 'zone';
+  zone_id: string;
+  label?: string;
+  kind?: string;
+  capacity?: number;
+  color?: string;
+}
+
+export interface ZoneRemoveEvent extends Envelope {
+  event: 'zone_remove';
+  zone_id: string;
+}
+
 /** Server → viewer only. */
 export interface SnapshotEvent extends Envelope {
   event: 'snapshot';
   agents: RegisterAgentEvent[];
   edges: GraphUpdateEvent[];
   recent: AgentEvent[];
+  /** Rooms the producer declared, so a late viewer rebuilds the same floor. */
+  zones?: ZoneEvent[];
 }
 
 /** Server → viewer only. */
@@ -128,7 +145,9 @@ export type AgentEvent =
   | AgentStateUpdateEvent
   | GraphUpdateEvent
   | UnregisterEvent
-  | ResetEvent;
+  | ResetEvent
+  | ZoneEvent
+  | ZoneRemoveEvent;
 
 /** Everything a viewer may receive. */
 export type IncomingEvent = AgentEvent | SnapshotEvent | ServerInfoEvent;
@@ -141,6 +160,8 @@ export const PRODUCER_EVENT_TYPES = [
   'graph_edge',
   'unregister',
   'reset',
+  'zone',
+  'zone_remove',
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -218,12 +239,21 @@ export function parseEvent(raw: unknown): IncomingEvent | { error: string } {
     case 'reset':
       return raw as unknown as ResetEvent;
 
+    case 'zone':
+      if (!isNonEmptyString(raw.zone_id)) return { error: 'zone: missing zone_id' };
+      return raw as unknown as ZoneEvent;
+
+    case 'zone_remove':
+      if (!isNonEmptyString(raw.zone_id)) return { error: 'zone_remove: missing zone_id' };
+      return raw as unknown as ZoneRemoveEvent;
+
     case 'snapshot':
       return {
         ...(raw as object),
         agents: Array.isArray(raw.agents) ? raw.agents : [],
         edges: Array.isArray(raw.edges) ? raw.edges : [],
         recent: Array.isArray(raw.recent) ? raw.recent : [],
+        zones: Array.isArray(raw.zones) ? raw.zones : [],
       } as SnapshotEvent;
 
     case 'server_info':

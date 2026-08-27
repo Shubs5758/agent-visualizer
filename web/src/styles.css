@@ -605,6 +605,36 @@ code {
   will-change: transform;
 }
 
+.hud-room {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  background: rgba(6, 10, 17, 0.9);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  transform: translate3d(0, 0, 0);
+  margin-left: -22px;
+  box-shadow: 0 0 10px -3px currentColor;
+  will-change: transform;
+}
+
+.hud-room.is-full {
+  background: rgba(40, 10, 18, 0.92);
+}
+
+.hud-room-wait {
+  font-weight: 400;
+  opacity: 0.8;
+}
+
 .hud-name {
   position: absolute;
   top: var(--foot, 50px);

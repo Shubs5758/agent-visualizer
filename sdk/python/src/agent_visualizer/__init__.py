@@ -28,6 +28,7 @@ The client has no required dependencies; the bridge needs the ``[server]`` extra
 from .client import (
     AVATAR_TYPES,
     DEFAULT_SERVER_URL,
+    ZONE_KINDS,
     ZONES,
     AgentHandle,
     AgentVisualizerClient,
@@ -44,6 +45,7 @@ __all__ = [
     "visualize_agent",
     "AVATAR_TYPES",
     "ZONES",
+    "ZONE_KINDS",
     "DEFAULT_SERVER_URL",
     "__version__",
 ]

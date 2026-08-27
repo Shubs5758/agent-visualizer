@@ -157,7 +157,54 @@ the scene.
 
 Removes the sprite with a fade-out. The roster keeps the agent marked `offline`.
 
-### 3.2 `reset`
+### 3.2 `zone` — declare a room
+
+Rooms are **not fixed**. A producer describes its own system and the floorplan is
+laid out automatically — room size, walls, door and workstations are all derived,
+so you never deal in coordinates.
+
+```json
+{ "event": "zone", "zone_id": "mcp_github", "label": "MCP · GitHub",
+  "kind": "mcp", "capacity": 6 }
+```
+
+| Field      | Type     | Required | Notes                                                                     |
+| ---------- | -------- | -------- | ------------------------------------------------------------------------- |
+| `zone_id`  | `string` | yes      | Stable id — this is what `move.target_zone` refers to                      |
+| `label`    | `string` | no       | Door plaque text. Defaults to the id, upper-cased                          |
+| `kind`     | `string` | no       | See below. Unknown values become `custom`                                  |
+| `capacity` | `number` | no       | Agents working here at once. Sets room size and workstation count; arrivals beyond it queue at the door. Default `4` |
+| `color`    | `string` | no       | `#rrggbb` accent override                                                  |
+
+**The first `zone` a producer sends replaces the built-in default floor.** A
+backend that describes itself does not end up with someone else's Tool Forge in
+the corner. Re-sending an existing `zone_id` updates that room in place.
+
+Room kinds — each carries its own floor colour, wall accent and furniture:
+
+| Kind | For |
+| --- | --- |
+| `gateway` | Entry / spawn |
+| `registry` | Agent registry |
+| `memory` | Vector store, RAG, long-term memory |
+| `tools` | Tool execution |
+| `mcp` | An MCP server |
+| `llm` | Model calls |
+| `eval` | Evaluation / QA harness |
+| `guardrail` | Safety and policy checks |
+| `council` | Multi-agent deliberation |
+| `output` | Final artifacts |
+| `custom` | Anything else |
+
+### 3.3 `zone_remove`
+
+```json
+{ "event": "zone_remove", "zone_id": "mcp_github" }
+```
+
+Closes a room. The floor is re-laid out and any agents inside are re-seated.
+
+### 3.4 `reset`
 
 ```json
 { "event": "reset" }
@@ -197,18 +244,22 @@ opened halfway through a run catch up.
 
 ## 5. World coordinates
 
-The grid is **25 × 18 tiles**, tile size **32 px** (canvas 800 × 576). Tile
-`{x: 0, y: 0}` is the top-left. Out-of-range coordinates are clamped.
+Tile size is **32 px**. **The grid itself is not fixed** — it is sized to hold
+whatever rooms have been declared, so `{x, y}` coordinates are only meaningful
+relative to the current floor. Out-of-range values are clamped.
 
-Named interaction zones (usable as `target_zone`):
+Prefer `target_zone` over `target_pos`: a room id survives a relayout, a tile
+coordinate does not.
 
-| Zone id   | Label             | Tiles (x, y, w, h) | Meaning                        |
-| --------- | ----------------- | ------------------ | ------------------------------ |
-| `gateway` | GATEWAY           | 1, 1, 4, 4         | Spawn / entry point            |
-| `library` | LIBRARY · MEMORY  | 1, 12, 6, 5        | Retrieval, RAG, memory reads   |
-| `tools`   | TOOL FORGE        | 18, 1, 6, 5        | Tool / function execution      |
-| `council` | COUNCIL           | 10, 6, 6, 5        | Multi-agent deliberation       |
-| `vault`   | VAULT · OUTPUT    | 18, 12, 6, 5       | Final answers, artifacts       |
+If a producer declares no rooms, this default floor is used (35 × 20 tiles):
+
+| Zone id   | Kind      | Capacity | Meaning                      |
+| --------- | --------- | -------- | ---------------------------- |
+| `gateway` | gateway   | 4        | Spawn / entry point          |
+| `library` | memory    | 6        | Retrieval, RAG, memory reads |
+| `tools`   | tools     | 6        | Tool / function execution    |
+| `council` | council   | 6        | Multi-agent deliberation     |
+| `vault`   | output    | 4        | Final answers, artifacts     |
 
 ---
 

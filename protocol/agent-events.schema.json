@@ -4,18 +4,41 @@
   "title": "Agent Visualizer Event",
   "description": "Framework-agnostic events streamed from an AI agent workflow into the 2D Retro Agent Visualizer.",
   "type": "object",
-  "required": ["event"],
-  "discriminator": { "propertyName": "event" },
-  "oneOf": [
-    { "$ref": "#/$defs/RegisterAgent" },
-    { "$ref": "#/$defs/AgentMove" },
-    { "$ref": "#/$defs/AgentCommunicate" },
-    { "$ref": "#/$defs/AgentStateUpdate" },
-    { "$ref": "#/$defs/GraphUpdate" },
-    { "$ref": "#/$defs/Unregister" },
-    { "$ref": "#/$defs/Reset" }
+  "required": [
+    "event"
   ],
-
+  "discriminator": {
+    "propertyName": "event"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/RegisterAgent"
+    },
+    {
+      "$ref": "#/$defs/AgentMove"
+    },
+    {
+      "$ref": "#/$defs/AgentCommunicate"
+    },
+    {
+      "$ref": "#/$defs/AgentStateUpdate"
+    },
+    {
+      "$ref": "#/$defs/GraphUpdate"
+    },
+    {
+      "$ref": "#/$defs/Unregister"
+    },
+    {
+      "$ref": "#/$defs/Reset"
+    },
+    {
+      "$ref": "#/$defs/ZoneDeclare"
+    },
+    {
+      "$ref": "#/$defs/ZoneRemove"
+    }
+  ],
   "$defs": {
     "Envelope": {
       "type": "object",
@@ -35,47 +58,90 @@
         }
       }
     },
-
     "GridPos": {
       "type": "object",
       "description": "A tile coordinate on the 25x18 grid. Origin is top-left.",
-      "required": ["x", "y"],
+      "required": [
+        "x",
+        "y"
+      ],
       "properties": {
-        "x": { "type": "integer", "minimum": 0, "maximum": 24 },
-        "y": { "type": "integer", "minimum": 0, "maximum": 17 }
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 24
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 17
+        }
       },
       "additionalProperties": false
     },
-
     "ZoneId": {
       "type": "string",
-      "enum": ["gateway", "library", "tools", "council", "vault"]
+      "enum": [
+        "gateway",
+        "library",
+        "tools",
+        "council",
+        "vault"
+      ]
     },
-
     "AvatarType": {
       "type": "string",
       "description": "Sprite archetype. Unrecognised values are hashed deterministically onto this list.",
-      "enum": ["knight", "artificer", "rogue", "cleric", "bard", "ranger", "mage", "druid"]
+      "enum": [
+        "knight",
+        "artificer",
+        "rogue",
+        "cleric",
+        "bard",
+        "ranger",
+        "mage",
+        "druid"
+      ]
     },
-
     "HexColor": {
       "type": "string",
       "pattern": "^#[0-9a-fA-F]{6}$"
     },
-
     "RegisterAgent": {
       "title": "REGISTER_AGENT",
-      "allOf": [{ "$ref": "#/$defs/Envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/Envelope"
+        }
+      ],
       "type": "object",
-      "required": ["event", "agent_id"],
+      "required": [
+        "event",
+        "agent_id"
+      ],
       "properties": {
-        "event": { "const": "register" },
-        "agent_id": { "type": "string", "minLength": 1 },
-        "name": { "type": "string" },
-        "role": { "type": "string" },
-        "avatar_type": { "$ref": "#/$defs/AvatarType" },
-        "initial_pos": { "$ref": "#/$defs/GridPos" },
-        "color": { "$ref": "#/$defs/HexColor" },
+        "event": {
+          "const": "register"
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "avatar_type": {
+          "$ref": "#/$defs/AvatarType"
+        },
+        "initial_pos": {
+          "$ref": "#/$defs/GridPos"
+        },
+        "color": {
+          "$ref": "#/$defs/HexColor"
+        },
         "ts": true,
         "run_id": true,
         "seq": true
@@ -87,26 +153,58 @@
           "name": "Scout",
           "role": "scout",
           "avatar_type": "rogue",
-          "initial_pos": { "x": 2, "y": 3 }
+          "initial_pos": {
+            "x": 2,
+            "y": 3
+          }
         }
       ]
     },
-
     "AgentMove": {
       "title": "AGENT_MOVE",
-      "allOf": [{ "$ref": "#/$defs/Envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/Envelope"
+        }
+      ],
       "type": "object",
-      "required": ["event", "agent_id"],
+      "required": [
+        "event",
+        "agent_id"
+      ],
       "anyOf": [
-        { "required": ["target_pos"] },
-        { "required": ["target_zone"] }
+        {
+          "required": [
+            "target_pos"
+          ]
+        },
+        {
+          "required": [
+            "target_zone"
+          ]
+        }
       ],
       "properties": {
-        "event": { "const": "move" },
-        "agent_id": { "type": "string", "minLength": 1 },
-        "target_pos": { "$ref": "#/$defs/GridPos" },
-        "target_zone": { "$ref": "#/$defs/ZoneId" },
-        "speed": { "type": "number", "exclusiveMinimum": 0, "default": 1.0 },
+        "event": {
+          "const": "move"
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_pos": {
+          "$ref": "#/$defs/GridPos"
+        },
+        "target_zone": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Id of a declared room (see the zone event), or a default-floor id."
+        },
+        "speed": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1.0
+        },
         "ts": true,
         "run_id": true,
         "seq": true
@@ -115,28 +213,54 @@
         {
           "event": "move",
           "agent_id": "scout_1",
-          "target_pos": { "x": 8, "y": 5 },
+          "target_pos": {
+            "x": 8,
+            "y": 5
+          },
           "speed": 1.0
         }
       ]
     },
-
     "AgentCommunicate": {
       "title": "AGENT_COMMUNICATE",
-      "allOf": [{ "$ref": "#/$defs/Envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/Envelope"
+        }
+      ],
       "type": "object",
-      "required": ["event", "source_agent_id", "message"],
+      "required": [
+        "event",
+        "source_agent_id",
+        "message"
+      ],
       "properties": {
-        "event": { "const": "communicate" },
-        "source_agent_id": { "type": "string", "minLength": 1 },
+        "event": {
+          "const": "communicate"
+        },
+        "source_agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
         "target_agent_id": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Omit or null for a broadcast: the bubble shows without any walking."
         },
-        "message": { "type": "string" },
+        "message": {
+          "type": "string"
+        },
         "interaction_type": {
           "type": "string",
-          "enum": ["dialogue", "handoff", "request", "response", "broadcast"],
+          "enum": [
+            "dialogue",
+            "handoff",
+            "request",
+            "response",
+            "broadcast"
+          ],
           "default": "dialogue"
         },
         "ts": true,
@@ -153,26 +277,50 @@
         }
       ]
     },
-
     "AgentStateUpdate": {
       "title": "AGENT_STATE_UPDATE",
-      "allOf": [{ "$ref": "#/$defs/Envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/Envelope"
+        }
+      ],
       "type": "object",
-      "required": ["event", "agent_id", "status"],
+      "required": [
+        "event",
+        "agent_id",
+        "status"
+      ],
       "properties": {
-        "event": { "const": "state_update" },
-        "agent_id": { "type": "string", "minLength": 1 },
-        "status": { "type": "string" },
-        "detail": { "type": "string" },
+        "event": {
+          "const": "state_update"
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
         "metrics": {
           "type": "object",
           "description": "Numeric metrics. tokens / latency_ms / cost_usd are rendered specially.",
           "properties": {
-            "tokens": { "type": "number" },
-            "latency_ms": { "type": "number" },
-            "cost_usd": { "type": "number" }
+            "tokens": {
+              "type": "number"
+            },
+            "latency_ms": {
+              "type": "number"
+            },
+            "cost_usd": {
+              "type": "number"
+            }
           },
-          "additionalProperties": { "type": "number" }
+          "additionalProperties": {
+            "type": "number"
+          }
         },
         "ts": true,
         "run_id": true,
@@ -183,52 +331,189 @@
           "event": "state_update",
           "agent_id": "scout_1",
           "status": "Executing Tool: WebSearch",
-          "metrics": { "tokens": 320, "latency_ms": 140 }
+          "metrics": {
+            "tokens": 320,
+            "latency_ms": 140
+          }
         }
       ]
     },
-
     "GraphUpdate": {
       "title": "GRAPH_UPDATE",
-      "allOf": [{ "$ref": "#/$defs/Envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/Envelope"
+        }
+      ],
       "type": "object",
-      "required": ["event", "source", "target"],
+      "required": [
+        "event",
+        "source",
+        "target"
+      ],
       "properties": {
-        "event": { "const": "graph_edge" },
-        "source": { "type": "string", "minLength": 1 },
-        "target": { "type": "string", "minLength": 1 },
-        "weight": { "type": "number", "default": 1.0 },
-        "label": { "type": "string" },
+        "event": {
+          "const": "graph_edge"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "weight": {
+          "type": "number",
+          "default": 1.0
+        },
+        "label": {
+          "type": "string"
+        },
         "ts": true,
         "run_id": true,
         "seq": true
       },
       "examples": [
-        { "event": "graph_edge", "source": "scout_1", "target": "mage_1", "weight": 1.0 }
+        {
+          "event": "graph_edge",
+          "source": "scout_1",
+          "target": "mage_1",
+          "weight": 1.0
+        }
       ]
     },
-
     "Unregister": {
       "title": "UNREGISTER_AGENT (extension)",
-      "allOf": [{ "$ref": "#/$defs/Envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/Envelope"
+        }
+      ],
       "type": "object",
-      "required": ["event", "agent_id"],
+      "required": [
+        "event",
+        "agent_id"
+      ],
       "properties": {
-        "event": { "const": "unregister" },
-        "agent_id": { "type": "string", "minLength": 1 },
+        "event": {
+          "const": "unregister"
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
         "ts": true,
         "run_id": true,
         "seq": true
       }
     },
-
     "Reset": {
       "title": "RESET_WORLD (extension)",
-      "allOf": [{ "$ref": "#/$defs/Envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/Envelope"
+        }
+      ],
       "type": "object",
-      "required": ["event"],
+      "required": [
+        "event"
+      ],
       "properties": {
-        "event": { "const": "reset" },
+        "event": {
+          "const": "reset"
+        },
+        "ts": true,
+        "run_id": true,
+        "seq": true
+      }
+    },
+    "ZoneKind": {
+      "type": "string",
+      "description": "What a room is for. Drives its colour and furniture.",
+      "enum": [
+        "gateway",
+        "registry",
+        "memory",
+        "tools",
+        "mcp",
+        "llm",
+        "eval",
+        "guardrail",
+        "council",
+        "output",
+        "custom"
+      ]
+    },
+    "ZoneDeclare": {
+      "title": "ZONE_DECLARE (extension)",
+      "allOf": [
+        {
+          "$ref": "#/$defs/Envelope"
+        }
+      ],
+      "type": "object",
+      "required": [
+        "event",
+        "zone_id"
+      ],
+      "properties": {
+        "event": {
+          "const": "zone"
+        },
+        "zone_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ZoneKind"
+        },
+        "capacity": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 4,
+          "description": "Workstations in the room; arrivals beyond it queue at the door."
+        },
+        "color": {
+          "$ref": "#/$defs/HexColor"
+        },
+        "ts": true,
+        "run_id": true,
+        "seq": true
+      },
+      "examples": [
+        {
+          "event": "zone",
+          "zone_id": "mcp_github",
+          "label": "MCP \u00b7 GitHub",
+          "kind": "mcp",
+          "capacity": 6
+        }
+      ]
+    },
+    "ZoneRemove": {
+      "title": "ZONE_REMOVE (extension)",
+      "allOf": [
+        {
+          "$ref": "#/$defs/Envelope"
+        }
+      ],
+      "type": "object",
+      "required": [
+        "event",
+        "zone_id"
+      ],
+      "properties": {
+        "event": {
+          "const": "zone_remove"
+        },
+        "zone_id": {
+          "type": "string",
+          "minLength": 1
+        },
         "ts": true,
         "run_id": true,
         "seq": true

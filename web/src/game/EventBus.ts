@@ -6,6 +6,8 @@ import type {
   GraphUpdateEvent,
   RegisterAgentEvent,
   UnregisterEvent,
+  ZoneEvent,
+  ZoneRemoveEvent,
 } from '../protocol/events';
 
 /**
@@ -30,6 +32,18 @@ export interface SpriteScreenPos {
   visible: boolean;
 }
 
+/** Screen-space occupancy readout for one room. */
+export interface RoomScreenInfo {
+  id: string;
+  label: string;
+  /** Door position in CSS px relative to the canvas. */
+  x: number;
+  y: number;
+  occupied: number;
+  capacity: number;
+  accent: string;
+}
+
 export interface BubblePayload {
   agent_id: string;
   message: string;
@@ -48,10 +62,13 @@ export const GameEvents = {
   edge: 'graph:edge',
   unregister: 'agent:unregister',
   reset: 'world:reset',
+  zone: 'world:zone',
+  zoneRemove: 'world:zone-remove',
 
   /** Phaser → React */
   sceneReady: 'current-scene-ready',
   positions: 'phaser:positions',
+  rooms: 'phaser:rooms',
   bubble: 'phaser:bubble',
   arrived: 'phaser:arrived',
 } as const;
@@ -65,4 +82,6 @@ export const emitToGame = {
   edge: (e: GraphUpdateEvent) => EventBus.emit(GameEvents.edge, e),
   unregister: (e: UnregisterEvent) => EventBus.emit(GameEvents.unregister, e),
   reset: () => EventBus.emit(GameEvents.reset),
+  zone: (e: ZoneEvent) => EventBus.emit(GameEvents.zone, e),
+  zoneRemove: (e: ZoneRemoveEvent) => EventBus.emit(GameEvents.zoneRemove, e),
 };

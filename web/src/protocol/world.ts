@@ -1,131 +1,112 @@
 /**
- * World geometry shared by the Phaser scene, the React overlays and the docs.
- * Changing anything here changes the coordinate space the protocol talks about,
- * so keep `protocol/PROTOCOL.md` §5 in sync.
+ * The world — now runtime state rather than a hardcoded map.
+ *
+ * Rooms are declared by the producer with `zone` events and placed by the
+ * floorplan engine, so the grid dimensions, the walls and the walkable space
+ * all change as rooms come and go. Everything that used to read a `GRID_COLS`
+ * constant now reads `world.cols` at call time.
+ *
+ * `TILE` is the only fixed quantity left.
  */
 
-import type { AvatarType, ZoneId } from './events';
+import type { AvatarType } from './events';
+import { computeFloorplan, type Floorplan } from '../game/grid/floorplan';
+import { DEFAULT_ZONES, type PlacedZone, type ZoneSpec } from './zones';
 
 export const TILE = 32;
-export const GRID_COLS = 25;
-export const GRID_ROWS = 18;
-export const WORLD_WIDTH = TILE * GRID_COLS; // 800
-export const WORLD_HEIGHT = TILE * GRID_ROWS; // 576
 
-export interface Zone {
-  id: ZoneId;
-  label: string;
-  /** Tile coords of the top-left corner. */
-  x: number;
-  y: number;
-  /** Size in tiles. */
-  w: number;
-  h: number;
-  /** Floor fill. */
-  color: number;
-  /** Border + label colour. */
-  accent: number;
-  blurb: string;
+/** Fired whenever the floorplan changes, so the scene can redraw and resize. */
+export type WorldListener = (world: WorldModel) => void;
+
+class WorldModel {
+  private plan: Floorplan = computeFloorplan(DEFAULT_ZONES);
+  private specs: ZoneSpec[] = [...DEFAULT_ZONES];
+  private listeners = new Set<WorldListener>();
+  /** True until a producer declares a room of its own. */
+  private usingDefaults = true;
+
+  get cols(): number {
+    return this.plan.cols;
+  }
+  get rows(): number {
+    return this.plan.rows;
+  }
+  get width(): number {
+    return this.plan.cols * TILE;
+  }
+  get height(): number {
+    return this.plan.rows * TILE;
+  }
+  get zones(): PlacedZone[] {
+    return this.plan.zones;
+  }
+  get isDefault(): boolean {
+    return this.usingDefaults;
+  }
+
+  zone(id: string): PlacedZone | undefined {
+    return this.plan.zones.find((z) => z.id === id);
+  }
+
+  isBlocked(x: number, y: number): boolean {
+    if (x < 0 || y < 0 || x >= this.plan.cols || y >= this.plan.rows) return true;
+    return this.plan.blocked.has(`${x},${y}`);
+  }
+
+  subscribe(listener: WorldListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private commit(): void {
+    this.plan = computeFloorplan(this.specs);
+    for (const listener of this.listeners) listener(this);
+  }
+
+  /**
+   * Declare (or update) a room. The first producer-declared room clears the
+   * built-in default world — a backend that describes itself should not end up
+   * with someone else's Tool Forge sitting in the corner.
+   */
+  declareZone(spec: ZoneSpec): void {
+    if (this.usingDefaults) {
+      this.specs = [];
+      this.usingDefaults = false;
+    }
+    const at = this.specs.findIndex((s) => s.id === spec.id);
+    if (at >= 0) this.specs[at] = spec;
+    else this.specs.push(spec);
+    this.commit();
+  }
+
+  removeZone(id: string): void {
+    const before = this.specs.length;
+    this.specs = this.specs.filter((s) => s.id !== id);
+    if (this.specs.length !== before) this.commit();
+  }
+
+  /** Back to the built-in world. Used by `reset`. */
+  restoreDefaults(): void {
+    this.specs = [...DEFAULT_ZONES];
+    this.usingDefaults = true;
+    this.commit();
+  }
 }
 
-export const ZONES: Zone[] = [
-  {
-    id: 'gateway',
-    label: 'GATEWAY',
-    x: 1,
-    y: 1,
-    w: 4,
-    h: 4,
-    color: 0x10283a,
-    accent: 0x4ecdf5,
-    blurb: 'Spawn / entry',
-  },
-  {
-    id: 'library',
-    label: 'LIBRARY · MEMORY',
-    x: 1,
-    y: 12,
-    w: 6,
-    h: 5,
-    color: 0x241f3d,
-    accent: 0xa78bfa,
-    blurb: 'Retrieval & memory',
-  },
-  {
-    id: 'tools',
-    label: 'TOOL FORGE',
-    x: 18,
-    y: 1,
-    w: 6,
-    h: 5,
-    color: 0x3a2612,
-    accent: 0xffa940,
-    blurb: 'Tool execution',
-  },
-  {
-    id: 'council',
-    label: 'COUNCIL',
-    x: 10,
-    y: 6,
-    w: 6,
-    h: 5,
-    color: 0x12301f,
-    accent: 0x4ade80,
-    blurb: 'Deliberation',
-  },
-  {
-    id: 'vault',
-    label: 'VAULT · OUTPUT',
-    x: 18,
-    y: 12,
-    w: 6,
-    h: 5,
-    color: 0x35142a,
-    accent: 0xff5c8a,
-    blurb: 'Final artifacts',
-  },
-];
+export const world = new WorldModel();
 
-export const ZONE_BY_ID: Record<string, Zone> = Object.fromEntries(
-  ZONES.map((z) => [z.id, z]),
-);
-
-/**
- * Impassable tiles. Hand-authored (rather than random) so the map is always
- * fully connected — every zone stays reachable from every other zone.
- */
-export const OBSTACLES: ReadonlyArray<[number, number]> = (() => {
-  const tiles: [number, number][] = [];
-  // Two wall segments with a five-tile gap between them at y = 6..10.
-  for (let y = 1; y <= 5; y++) tiles.push([8, y]);
-  for (let y = 11; y <= 16; y++) tiles.push([8, y]);
-  // Partial wall shielding the vault approach.
-  for (let y = 13; y <= 16; y++) tiles.push([16, y]);
-  // Scattered crates / rubble.
-  const props: [number, number][] = [
-    [5, 8],
-    [6, 8],
-    [20, 9],
-    [21, 9],
-    [12, 14],
-    [13, 14],
-    [3, 6],
-    [23, 8],
-  ];
-  return [...tiles, ...props];
-})();
-
-const obstacleKeys = new Set(OBSTACLES.map(([x, y]) => `${x},${y}`));
+// ---------------------------------------------------------------------------
+// Geometry helpers — all read the live world
+// ---------------------------------------------------------------------------
 
 export function isBlocked(x: number, y: number): boolean {
-  if (x < 0 || y < 0 || x >= GRID_COLS || y >= GRID_ROWS) return true;
-  return obstacleKeys.has(`${x},${y}`);
+  return world.isBlocked(x, y);
 }
 
 export function clampToGrid(pos: { x: number; y: number }): { x: number; y: number } {
   return {
-    x: Math.max(0, Math.min(GRID_COLS - 1, Math.round(pos.x))),
-    y: Math.max(0, Math.min(GRID_ROWS - 1, Math.round(pos.y))),
+    x: Math.max(0, Math.min(world.cols - 1, Math.round(pos.x))),
+    y: Math.max(0, Math.min(world.rows - 1, Math.round(pos.y))),
   };
 }
 
@@ -135,28 +116,36 @@ export function tileToWorld(x: number, y: number): { x: number; y: number } {
 }
 
 /**
- * Pick a free tile inside a zone, spiralling outwards from the centre so
- * several agents sent to the same zone spread out instead of stacking.
+ * Where an agent should stand when sent to a room.
+ *
+ * Rooms have numbered workstations, so agents take the first free desk rather
+ * than crowding the nearest free tile. Once the desks are full, arrivals wait
+ * on the corridor side of the door instead of stacking on top of each other —
+ * which is what makes a busy room readable.
  */
-export function tileInZone(
-  zone: Zone,
+export function seatInZone(
+  zone: PlacedZone,
   isOccupied: (x: number, y: number) => boolean = () => false,
-): { x: number; y: number } {
-  const candidates: { x: number; y: number }[] = [];
-  for (let dy = 0; dy < zone.h; dy++) {
-    for (let dx = 0; dx < zone.w; dx++) {
-      candidates.push({ x: zone.x + dx, y: zone.y + dy });
+): { x: number; y: number; seated: boolean } {
+  for (const desk of zone.desks) {
+    if (!isOccupied(desk.x, desk.y)) return { ...desk, seated: true };
+  }
+  // Overflow: queue outward from the door, along the corridor.
+  const step: Record<PlacedZone['doorSide'], [number, number]> = {
+    north: [0, -1],
+    south: [0, 1],
+    west: [-1, 0],
+    east: [1, 0],
+  };
+  const [dx, dy] = step[zone.doorSide];
+  for (let n = 1; n <= 8; n++) {
+    for (const lateral of [0, -1, 1, -2, 2]) {
+      const x = zone.door.x + dx * n + (dx === 0 ? lateral : 0);
+      const y = zone.door.y + dy * n + (dy === 0 ? lateral : 0);
+      if (!world.isBlocked(x, y) && !isOccupied(x, y)) return { x, y, seated: false };
     }
   }
-  const cx = zone.x + (zone.w - 1) / 2;
-  const cy = zone.y + (zone.h - 1) / 2;
-  candidates.sort(
-    (a, b) => (a.x - cx) ** 2 + (a.y - cy) ** 2 - ((b.x - cx) ** 2 + (b.y - cy) ** 2),
-  );
-  for (const c of candidates) {
-    if (!isBlocked(c.x, c.y) && !isOccupied(c.x, c.y)) return c;
-  }
-  return { x: zone.x, y: zone.y };
+  return { ...zone.door, seated: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -193,9 +182,6 @@ export interface AvatarPalette {
  * contrast all pass. No set of eight hues can clear the *all-pairs* check, so
  * identity is never colour-alone here: every agent carries a name in the
  * roster and a nameplate under its sprite.
- *
- * `p` is the cloth colour and drives the sprite; `ui` is the same hue and is
- * what the roster swatch, bubbles and feed use.
  */
 export const AVATAR_PALETTES: Record<AvatarType, AvatarPalette> = {
   // slot 1 — blue

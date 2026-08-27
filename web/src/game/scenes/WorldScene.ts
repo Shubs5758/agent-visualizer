@@ -1,19 +1,14 @@
 import Phaser from 'phaser';
 import {
-  GRID_COLS,
-  GRID_ROWS,
   INTERACTION_COLORS,
-  OBSTACLES,
   TILE,
-  WORLD_HEIGHT,
-  WORLD_WIDTH,
-  ZONES,
-  ZONE_BY_ID,
   clampToGrid,
   isBlocked,
-  tileInZone,
+  seatInZone,
   tileToWorld,
+  world,
 } from '../../protocol/world';
+import { normaliseKind, type PlacedZone } from '../../protocol/zones';
 import {
   resolveAvatarType,
   type AgentCommunicateEvent,
@@ -22,8 +17,10 @@ import {
   type GraphUpdateEvent,
   type RegisterAgentEvent,
   type UnregisterEvent,
+  type ZoneEvent,
+  type ZoneRemoveEvent,
 } from '../../protocol/events';
-import { EventBus, GameEvents, type SpriteScreenPos } from '../EventBus';
+import { EventBus, GameEvents, type RoomScreenInfo, type SpriteScreenPos } from '../EventBus';
 import { AgentSprite } from '../sprites/AgentSprite';
 import { adjacentTo, findPath, nearestFree, samePos, type GridPos } from '../grid/pathfinding';
 
@@ -47,9 +44,13 @@ const BEAM_MS = 900;
  */
 export class WorldScene extends Phaser.Scene {
   private agents = new Map<string, AgentSprite>();
+  /** agent id -> room id, so a relayout can re-seat everyone. */
+  private agentZone = new Map<string, string>();
   private edges = new Map<string, Edge>();
 
-  private floor!: Phaser.GameObjects.Graphics;
+  private floorLayer?: Phaser.GameObjects.Graphics;
+  private roomLabels: Phaser.GameObjects.Text[] = [];
+  private unsubscribeWorld?: () => void;
   private edgeLayer!: Phaser.GameObjects.Graphics;
   private beamLayer!: Phaser.GameObjects.Graphics;
   private beams: { from: string; to: string; color: number; until: number }[] = [];
@@ -63,11 +64,20 @@ export class WorldScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor('#070a10');
+    this.applyWorldSize();
     this.drawWorld();
+
+    // Rooms can be declared at any time; the floor is rebuilt when they are.
+    this.unsubscribeWorld = world.subscribe(() => {
+      this.applyWorldSize();
+      this.drawWorld();
+      this.reseatAgents();
+    });
 
     this.edgeLayer = this.add.graphics().setDepth(5);
     this.beamLayer = this.add.graphics().setDepth(40);
 
+    this.installCameraControls();
     this.bindEventBus();
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.teardown());
@@ -78,96 +88,160 @@ export class WorldScene extends Phaser.Scene {
 
   // -- world rendering ---------------------------------------------------
 
+  /** Redraw the entire floor. Cheap enough to just rebuild on any world change. */
   private drawWorld(): void {
-    this.floor = this.add.graphics().setDepth(0);
+    this.floorLayer?.destroy();
+    this.roomLabels.forEach((t) => t.destroy());
+    this.roomLabels = [];
 
-    // Checkerboard floor.
-    for (let y = 0; y < GRID_ROWS; y++) {
-      for (let x = 0; x < GRID_COLS; x++) {
-        this.floor.fillStyle((x + y) % 2 === 0 ? 0x1a2438 : 0x151d2e, 1);
-        this.floor.fillRect(x * TILE, y * TILE, TILE, TILE);
+    const g = this.add.graphics().setDepth(0);
+    this.floorLayer = g;
+
+    // Corridor floor across the whole plate, with a subtle tile grid.
+    for (let y = 0; y < world.rows; y++) {
+      for (let x = 0; x < world.cols; x++) {
+        g.fillStyle((x + y) % 2 === 0 ? 0x141b28 : 0x111825, 1);
+        g.fillRect(x * TILE, y * TILE, TILE, TILE);
+      }
+    }
+    g.lineStyle(1, 0x1d2738, 0.5);
+    for (let x = 0; x <= world.cols; x++) g.lineBetween(x * TILE, 0, x * TILE, world.height);
+    for (let y = 0; y <= world.rows; y++) g.lineBetween(0, y * TILE, world.width, y * TILE);
+
+    for (const zone of world.zones) this.drawRoom(g, zone);
+  }
+
+  private drawRoom(g: Phaser.GameObjects.Graphics, zone: PlacedZone): void {
+    const px = zone.x * TILE;
+    const py = zone.y * TILE;
+    const pw = zone.w * TILE;
+    const ph = zone.h * TILE;
+    const accent = zone.color
+      ? Number.parseInt(zone.color.replace('#', ''), 16)
+      : zone.style.accent;
+
+    // Interior floor.
+    g.fillStyle(zone.style.floor, 1);
+    g.fillRect(px + TILE, py + TILE, pw - TILE * 2, ph - TILE * 2);
+
+    // Floor hatch, so the room reads as a material rather than a flat fill.
+    g.lineStyle(1, accent, 0.06);
+    for (let d = -ph; d < pw; d += 10) {
+      g.lineBetween(
+        px + Math.max(TILE, d), py + TILE,
+        px + Math.min(pw - TILE, d + ph), py + ph - TILE,
+      );
+    }
+
+    // Walls: solid blocks on every edge tile except the door.
+    for (let ix = zone.x; ix < zone.x + zone.w; ix++) {
+      for (let iy = zone.y; iy < zone.y + zone.h; iy++) {
+        const edge =
+          ix === zone.x || iy === zone.y ||
+          ix === zone.x + zone.w - 1 || iy === zone.y + zone.h - 1;
+        if (!edge) continue;
+        const isDoor = ix === zone.door.x && iy === zone.door.y;
+        const wx = ix * TILE;
+        const wy = iy * TILE;
+        if (isDoor) {
+          // Threshold: lit floor plus jambs, so the opening reads as a door.
+          g.fillStyle(accent, 0.22);
+          g.fillRect(wx, wy, TILE, TILE);
+          g.fillStyle(accent, 0.9);
+          const vertical = zone.doorSide === 'east' || zone.doorSide === 'west';
+          if (vertical) {
+            g.fillRect(wx + TILE / 2 - 1, wy, 2, 5);
+            g.fillRect(wx + TILE / 2 - 1, wy + TILE - 5, 2, 5);
+          } else {
+            g.fillRect(wx, wy + TILE / 2 - 1, 5, 2);
+            g.fillRect(wx + TILE - 5, wy + TILE / 2 - 1, 5, 2);
+          }
+          continue;
+        }
+        g.fillStyle(0x2b3548, 1);
+        g.fillRect(wx, wy, TILE, TILE);
+        g.fillStyle(0x3c4a63, 1);
+        g.fillRect(wx, wy, TILE, 4);
       }
     }
 
-    // Interaction zones.
-    for (const zone of ZONES) {
-      const px = zone.x * TILE;
-      const py = zone.y * TILE;
-      const pw = zone.w * TILE;
-      const ph = zone.h * TILE;
+    // Accent line along the inside of the wall.
+    g.lineStyle(2, accent, 0.75);
+    g.strokeRect(px + TILE, py + TILE, pw - TILE * 2, ph - TILE * 2);
 
-      this.floor.fillStyle(zone.color, 1);
-      this.floor.fillRect(px, py, pw, ph);
+    // Furniture at each workstation.
+    for (const desk of zone.desks) this.drawFurniture(g, desk.x, desk.y, zone.style.furniture, accent);
 
-      // Diagonal hatch — gives the floor a material instead of a flat fill.
-      this.floor.lineStyle(1, zone.accent, 0.07);
-      for (let d = -ph; d < pw; d += 8) {
-        const x1 = Math.max(px, px + d);
-        const y1 = py + Math.max(0, -d);
-        const x2 = Math.min(px + pw, px + d + ph);
-        const y2 = py + Math.min(ph, pw - d);
-        this.floor.lineBetween(x1, y1, x2, y2);
-      }
+    // Door plaque.
+    const label = this.add
+      .text(px + pw / 2, py + TILE + 4, zone.label, {
+        fontFamily: 'monospace',
+        fontSize: '11px',
+        fontStyle: 'bold',
+        color: Phaser.Display.Color.IntegerToColor(accent).rgba,
+      })
+      .setOrigin(0.5, 0)
+      .setResolution(3)
+      .setDepth(2);
+    g.fillStyle(0x000000, 0.5);
+    g.fillRect(label.x - label.width / 2 - 6, py + TILE + 2, label.width + 12, 16);
+    this.roomLabels.push(label);
+  }
 
-      this.floor.lineStyle(2, zone.accent, 0.9);
-      this.floor.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
-      this.floor.lineStyle(1, zone.accent, 0.22);
-      this.floor.strokeRect(px + 5, py + 5, pw - 10, ph - 10);
+  /** A few pixels of furniture so a room looks used rather than empty. */
+  private drawFurniture(
+    g: Phaser.GameObjects.Graphics,
+    tx: number,
+    ty: number,
+    kind: PlacedZone['style']['furniture'],
+    accent: number,
+  ): void {
+    const x = tx * TILE;
+    const y = ty * TILE;
+    g.fillStyle(0x000000, 0.35);
+    g.fillRect(x + 4, y + 20, TILE - 8, 8);
 
-      // Corner ticks — cheap way to make a flat rect read as a "designated area".
-      this.floor.lineStyle(2, zone.accent, 1);
-      const t = 7;
-      const corners: [number, number, number, number][] = [
-        [px + 1, py + 1, t, 0],
-        [px + 1, py + 1, 0, t],
-        [px + pw - 1, py + 1, -t, 0],
-        [px + pw - 1, py + 1, 0, t],
-        [px + 1, py + ph - 1, t, 0],
-        [px + 1, py + ph - 1, 0, -t],
-        [px + pw - 1, py + ph - 1, -t, 0],
-        [px + pw - 1, py + ph - 1, 0, -t],
-      ];
-      for (const [cx, cy, dx, dy] of corners) {
-        this.floor.lineBetween(cx, cy, cx + dx, cy + dy);
-      }
-
-      const label = this.add
-        .text(px + pw / 2, py + 6, zone.label, {
-          fontFamily: 'monospace',
-          fontSize: '11px',
-          fontStyle: 'bold',
-          color: Phaser.Display.Color.IntegerToColor(zone.accent).rgba,
-        })
-        .setOrigin(0.5, 0)
-        .setResolution(3)
-        .setDepth(2);
-      this.floor.fillStyle(0x000000, 0.45);
-      this.floor.fillRect(label.x - label.width / 2 - 5, py + 3, label.width + 10, 17);
-    }
-
-    // Grid lines on top of the floor, under everything else.
-    const grid = this.add.graphics().setDepth(2);
-    grid.lineStyle(1, 0x2a3a52, 0.55);
-    for (let x = 0; x <= GRID_COLS; x++) {
-      grid.lineBetween(x * TILE, 0, x * TILE, WORLD_HEIGHT);
-    }
-    for (let y = 0; y <= GRID_ROWS; y++) {
-      grid.lineBetween(0, y * TILE, WORLD_WIDTH, y * TILE);
-    }
-
-    // Obstacles: chunky pixel crates.
-    const props = this.add.graphics().setDepth(3);
-    for (const [x, y] of OBSTACLES) {
-      const px = x * TILE;
-      const py = y * TILE;
-      props.fillStyle(0x000000, 0.45);
-      props.fillRect(px + 5, py + 9, TILE - 8, TILE - 10);
-      props.fillStyle(0x27324a, 1);
-      props.fillRect(px + 4, py + 6, TILE - 8, TILE - 10);
-      props.fillStyle(0x35435f, 1);
-      props.fillRect(px + 6, py + 8, TILE - 12, 4);
-      props.lineStyle(1, 0x0a0f18, 1);
-      props.strokeRect(px + 4, py + 6, TILE - 8, TILE - 10);
+    switch (kind) {
+      case 'racks':
+        g.fillStyle(0x232f42, 1);
+        g.fillRect(x + 4, y + 4, TILE - 8, TILE - 10);
+        for (let i = 0; i < 4; i++) {
+          g.fillStyle(accent, i % 2 ? 0.75 : 0.35);
+          g.fillRect(x + 7, y + 7 + i * 5, TILE - 14, 2);
+        }
+        break;
+      case 'shelves':
+        g.fillStyle(0x2c2440, 1);
+        g.fillRect(x + 3, y + 5, TILE - 6, TILE - 12);
+        g.fillStyle(accent, 0.55);
+        g.fillRect(x + 5, y + 8, TILE - 10, 2);
+        g.fillRect(x + 5, y + 14, TILE - 10, 2);
+        break;
+      case 'benches':
+        g.fillStyle(0x3a2c1c, 1);
+        g.fillRect(x + 3, y + 12, TILE - 6, 9);
+        g.fillStyle(accent, 0.5);
+        g.fillRect(x + 6, y + 9, TILE - 12, 3);
+        break;
+      case 'table':
+        g.fillStyle(0x2a3446, 1);
+        g.fillRect(x + 2, y + 10, TILE - 4, 12);
+        g.fillStyle(accent, 0.4);
+        g.fillRect(x + 5, y + 13, TILE - 10, 2);
+        break;
+      case 'crates':
+        g.fillStyle(0x27324a, 1);
+        g.fillRect(x + 5, y + 8, TILE - 10, TILE - 14);
+        g.lineStyle(1, accent, 0.5);
+        g.strokeRect(x + 5, y + 8, TILE - 10, TILE - 14);
+        break;
+      case 'desks':
+      default:
+        g.fillStyle(0x27334a, 1);
+        g.fillRect(x + 3, y + 13, TILE - 6, 9);
+        g.fillStyle(accent, 0.65);
+        g.fillRect(x + 8, y + 6, TILE - 16, 6);
+        break;
     }
   }
 
@@ -194,9 +268,70 @@ export class WorldScene extends Phaser.Scene {
     on<GraphUpdateEvent>(GameEvents.edge, (e) => this.onEdge(e));
     on<UnregisterEvent>(GameEvents.unregister, (e) => this.onUnregister(e));
     on<void>(GameEvents.reset, () => this.onReset());
+    on<ZoneEvent>(GameEvents.zone, (e) => this.onZone(e));
+    on<ZoneRemoveEvent>(GameEvents.zoneRemove, (e) => world.removeZone(e.zone_id));
+  }
+
+  /**
+   * Fit the camera to the current floorplan.
+   *
+   * The canvas fills its container and the *camera* frames the world, rather
+   * than the canvas being the world size and CSS scaling it. That is what lets
+   * a 40-room floor stay navigable: the view zooms and pans instead of
+   * shrinking every agent to a speck.
+   */
+  private applyWorldSize(): void {
+    const cam = this.cameras.main;
+    cam.setBounds(0, 0, world.width, world.height);
+    this.fitZoom = Math.min(
+      this.scale.width / world.width,
+      this.scale.height / world.height,
+    );
+    // Never magnify past 1:1 — pixel art upscaled by a fraction shimmers.
+    cam.setZoom(Math.min(1, this.fitZoom));
+    cam.centerOn(world.width / 2, world.height / 2);
+  }
+
+  private fitZoom = 1;
+
+  /** Drag to pan, wheel to zoom, clamped between fit-the-floor and 1:1. */
+  private installCameraControls(): void {
+    const cam = this.cameras.main;
+
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (!pointer.isDown) return;
+      cam.scrollX -= (pointer.x - pointer.prevPosition.x) / cam.zoom;
+      cam.scrollY -= (pointer.y - pointer.prevPosition.y) / cam.zoom;
+    });
+
+    this.input.on(
+      'wheel',
+      (_p: unknown, _o: unknown, _dx: number, dy: number) => {
+        const min = Math.min(1, this.fitZoom);
+        const next = Phaser.Math.Clamp(cam.zoom * (dy > 0 ? 0.9 : 1.1), min, 1.6);
+        cam.setZoom(next);
+      },
+    );
+
+    this.scale.on(Phaser.Scale.Events.RESIZE, () => this.applyWorldSize());
+  }
+
+  /** After a relayout, tiles moved — put everyone back on a valid seat. */
+  private reseatAgents(): void {
+    for (const [id, agent] of this.agents) {
+      const zoneId = this.agentZone.get(id);
+      const zone = zoneId ? world.zone(zoneId) : undefined;
+      if (zone) {
+        const seat = seatInZone(zone, this.occupiedBy(id));
+        agent.teleport({ x: seat.x, y: seat.y });
+      } else {
+        agent.teleport(nearestFree(clampToGrid(agent.tile), isBlocked, this.occupiedBy(id)));
+      }
+    }
   }
 
   private teardown(): void {
+    this.unsubscribeWorld?.();
     for (const [key, fn] of this.handlers) EventBus.off(key, fn);
     this.handlers = [];
     this.agents.clear();
@@ -245,9 +380,12 @@ export class WorldScene extends Phaser.Scene {
     }
 
     const taken = this.occupiedBy();
+    const entry = world.zone('gateway') ?? world.zones[0];
     const tile = e.initial_pos
       ? nearestFree(clampToGrid(e.initial_pos), isBlocked, taken)
-      : tileInZone(ZONE_BY_ID.gateway, taken);
+      : entry
+        ? seatInZone(entry, taken)
+        : nearestFree({ x: 1, y: 1 }, isBlocked, taken);
 
     const sprite = new AgentSprite(this, {
       agentId: e.agent_id,
@@ -266,10 +404,13 @@ export class WorldScene extends Phaser.Scene {
     let wanted: GridPos;
     if (e.target_pos) {
       wanted = clampToGrid(e.target_pos);
+      this.agentZone.delete(e.agent_id);
     } else {
-      const zone = ZONE_BY_ID[String(e.target_zone)];
+      const zone = world.zone(String(e.target_zone));
       if (!zone) return;
-      wanted = tileInZone(zone, this.occupiedBy(e.agent_id));
+      // Take a numbered workstation; overflow queues outside the door.
+      wanted = seatInZone(zone, this.occupiedBy(e.agent_id));
+      this.agentZone.set(e.agent_id, zone.id);
     }
 
     const dest = this.resolveDestination(agent.tile, wanted, e.agent_id);
@@ -318,6 +459,16 @@ export class WorldScene extends Phaser.Scene {
     source.walkPath(path, 1.35, show);
   }
 
+  private onZone(e: ZoneEvent): void {
+    world.declareZone({
+      id: e.zone_id,
+      label: e.label ?? e.zone_id.toUpperCase(),
+      kind: normaliseKind(e.kind),
+      capacity: Math.max(1, Math.floor(e.capacity ?? 4)),
+      color: e.color,
+    });
+  }
+
   private onStateUpdate(e: AgentStateUpdateEvent): void {
     const agent = this.agents.get(e.agent_id);
     if (!agent) return;
@@ -332,6 +483,7 @@ export class WorldScene extends Phaser.Scene {
     const agent = this.agents.get(e.agent_id);
     if (!agent) return;
     this.agents.delete(e.agent_id);
+    this.agentZone.delete(e.agent_id);
     for (const [key, edge] of this.edges) {
       if (edge.source === e.agent_id || edge.target === e.agent_id) this.edges.delete(key);
     }
@@ -341,6 +493,8 @@ export class WorldScene extends Phaser.Scene {
   private onReset(): void {
     for (const agent of this.agents.values()) agent.destroy();
     this.agents.clear();
+    this.agentZone.clear();
+    world.restoreDefaults();
     this.edges.clear();
     this.beams = [];
     this.edgeLayer.clear();
@@ -430,25 +584,46 @@ export class WorldScene extends Phaser.Scene {
    * Phaser's FIT scaling.
    */
   private publishPositions(): void {
-    if (!this.agents.size) {
-      EventBus.emit(GameEvents.positions, [] as SpriteScreenPos[]);
-      return;
-    }
-    const scaleX = this.scale.displayScale.x || 1;
-    const scaleY = this.scale.displayScale.y || 1;
+    const cam = this.cameras.main;
+    const view = cam.worldView;
+    const zoom = cam.zoom;
+    // displayScale converts game pixels to on-screen CSS pixels; the camera
+    // converts world pixels to game pixels. Both apply.
+    const dsx = this.scale.displayScale.x || 1;
+    const dsy = this.scale.displayScale.y || 1;
+    const toScreenX = (wx: number) => ((wx - view.x) * zoom) / dsx;
+    const toScreenY = (wy: number) => ((wy - view.y) * zoom) / dsy;
 
     const payload: SpriteScreenPos[] = [];
     for (const [id, agent] of this.agents) {
       payload.push({
         agent_id: id,
-        x: agent.x / scaleX,
-        y: agent.anchorY / scaleY,
-        offsetY: (TILE / 2) / scaleY,
-        footY: agent.footOffset / scaleY,
-        visible: agent.alpha > 0.5,
+        x: toScreenX(agent.x),
+        y: toScreenY(agent.anchorY),
+        offsetY: ((TILE / 2) * zoom) / dsy,
+        footY: (agent.footOffset * zoom) / dsy,
+        // Cull anything off-screen so the DOM does not carry hidden overlays.
+        visible: agent.alpha > 0.5 && view.contains(agent.x, agent.y),
       });
     }
     EventBus.emit(GameEvents.positions, payload);
+
+    const occupancy = new Map<string, number>();
+    for (const zoneId of this.agentZone.values()) {
+      occupancy.set(zoneId, (occupancy.get(zoneId) ?? 0) + 1);
+    }
+    const rooms: RoomScreenInfo[] = world.zones.map((zone) => ({
+      id: zone.id,
+      label: zone.label,
+      x: toScreenX((zone.x + zone.w / 2) * TILE),
+      y: toScreenY((zone.y + zone.h) * TILE),
+      occupied: occupancy.get(zone.id) ?? 0,
+      capacity: zone.capacity,
+      accent: Phaser.Display.Color.IntegerToColor(
+        zone.color ? Number.parseInt(zone.color.replace('#', ''), 16) : zone.style.accent,
+      ).rgba,
+    }));
+    EventBus.emit(GameEvents.rooms, rooms);
   }
 
   /** Used by the "centre on agent" action in the roster. */
@@ -456,11 +631,17 @@ export class WorldScene extends Phaser.Scene {
     const agent = this.agents.get(agentId);
     if (!agent) return;
     agent.pulse(0xf0dc8c);
-    this.cameras.main.flash(140, 56, 189, 248, false);
+    // With a pannable camera, "focus" means go and look at them.
+    this.cameras.main.pan(agent.x, agent.y, 380, 'Cubic.easeOut');
   }
 
   /** Grid coordinate helper exposed for debugging from the console. */
   tileCenter(x: number, y: number) {
     return tileToWorld(x, y);
+  }
+
+  /** Rooms currently on the floor — used by the roster legend. */
+  get rooms() {
+    return world.zones;
   }
 }
